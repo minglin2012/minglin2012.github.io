@@ -4,8 +4,8 @@ title: "如何证明不可计算的函数比可计算的函数多？"
 subtitle: "Why is there more uncomputable functions?"
 author: "Hux"
 header-img: "img/post-bg-infinity.jpg"
-header-mask: 0.3
-mathjax: true
+header-mask: 1
+mathjax: false
 tags:
   - 知乎
   - 计算理论
