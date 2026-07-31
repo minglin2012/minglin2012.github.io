@@ -4,7 +4,7 @@ SEOTitle: 王亚君的博客 | Wangyajun Blog
 header-img: img/home-bg.jpg
 email: hust.wangyajun@gmail.com
 description: "这里是 @Wangyajun 的个人博客，与你一起发现更大的世界 "
-keyword: "博客, 个人网站, 互联网, Web, JavaScript, React, React Native, 前端, 设计"
+keyword: "博客, 个人网站, 互联网, Web, JavaScript, 前端, 技术"
 url: "https://blog.junjun.tech" # your host, for absolute URL
 baseurl: "" # for example, '/blog' if your blog hosted on 'host/blog'
 
@@ -62,7 +62,7 @@ kramdown:
       start_line: 1
 
 # Disqus settings
-disqus_username: hux
+#disqus_username: your_disqus_shortname
 
 # Netease settings
 netease_comment: false
@@ -77,7 +77,7 @@ netease_comment: false
 
 # Sidebar settings
 sidebar: true # whether or not using Sidebar.
-sidebar-about-description: "要做一个有 swag 的程序员 <br> React Team @ Meta"
+sidebar-about-description: "保持好奇，持续学习。<br>用代码构建有趣的东西。"
 sidebar-avatar: https://github.com/minglin2012.png # use absolute URL, seeing it's used in both `/` and `/about/`
 
 # Featured Tags
