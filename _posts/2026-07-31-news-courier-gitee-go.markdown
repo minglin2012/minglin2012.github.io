@@ -229,7 +229,7 @@ GitHub Trending 是唯一一个在 Gitee Go 国内服务器上无法访问的源
 
 ## 七、仓库地址
 
-**Gitee**：[https://gitee.com/](https://gitee.com/)
+**Gitee**：[https://gitee.com/minglin2012/news-courier](https://gitee.com/minglin2012/news-courier)
 
 开源协议：MIT。欢迎 Fork、提 Issue、贡献 RSS 源配置。
 
