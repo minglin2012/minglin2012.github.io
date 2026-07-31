@@ -3,7 +3,7 @@ layout: post
 title: "Hello World"
 subtitle: "博客重新出发"
 date: 2026-07-31
-author: "Wangyajun"
+author: "Minglin"
 header-img: "img/home-bg.jpg"
 tags:
   - 随笔

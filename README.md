@@ -1,6 +1,6 @@
-# Wangyajun Blog
+# Minglin Blog
 
-> 王亚君的技术博客 — 记录、分享、共同成长。
+> 明林的技术博客 — 记录、分享、共同成长。
 
 [https://blog.junjun.tech](https://blog.junjun.tech)
 
