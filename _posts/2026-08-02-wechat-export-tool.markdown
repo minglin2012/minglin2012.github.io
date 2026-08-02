@@ -166,7 +166,7 @@ git push --tags
 
 | 获取密钥 | 选择会话 | 导出记录 |
 |---------|---------|---------|
-| ![获取密钥](examples/获取密钥.png) | ![打开会话](examples/打开会话.png) | ![导出记录](examples/导出记录.png) |
+| ![](https://cdn.junjun.tech/20260802082156.png) | ![](https://cdn.junjun.tech/20260802082217.png) | ![](https://cdn.junjun.tech/20260802082426.png) |
 
 ---
 
