@@ -15,3 +15,6 @@ node_modules
 
 # Draft posts inbox
 _drafts/
+
+# Daily raw reports
+_inbox/
