@@ -2,7 +2,7 @@
 layout: post
 title: "我写了一个「项目环境切换器」——点一下，整个开发环境自动打开"
 subtitle: "告别每天反复开关 VSCode、终端、浏览器，一个 Python 工具搞定项目切换"
-date: 2026-08-05
+date: 2026-08-06
 author: "Minglin"
 header-img: "img/post-bg.jpg"
 tags:
@@ -81,6 +81,17 @@ tags:
 打包  →  PyInstaller (onefile 19MB) + Inno Setup (安装包)
 CI/CD →  GitHub Actions + winget
 ```
+
+## 截图
+
+**架构图**
+![架构图](https://cdn.junjun.tech/7fdc5a3a-20fb-4c68-83eb-d7fef6af77dc.png)
+
+**进程面板**
+![进程面板](https://cdn.junjun.tech/20260806094146.png)
+
+**多软件启动界面**
+![多软件启动界面](https://cdn.junjun.tech/20260806085759.png)
 
 ## 安装
 
