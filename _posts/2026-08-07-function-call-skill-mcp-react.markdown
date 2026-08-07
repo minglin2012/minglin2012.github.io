@@ -2,7 +2,7 @@
 layout: post
 title: "Function-Call / Skill / MCP-Server / ReAct 范式深度辨析"
 subtitle: "面向 Agent 开发工程师，厘清四层容易混淆的概念，附带公司类比、完整调用链路与工程选型建议"
-date: 2026-08-06
+date: 2026-08-07
 author: "Minglin"
 header-img: "img/post-bg.jpg"
 tags:
