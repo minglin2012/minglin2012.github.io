@@ -36,8 +36,11 @@
      文件名前缀，避免模型猜错日期（实测出现过 2025-01-01）。
 
 调用 reasonix 的健壮性:
-  - Windows 下 reasonix 为 .cmd shim，subprocess 需 shell=True 才能经由 cmd 解析并
-    启动 node；POSIX 用可执行文件 + shell=False。
+  - 直接调用 node.exe + node_modules/reasonix/bin/reasonix.js（shell=False），
+    绕开 Windows 的 .cmd shim。原因：cmd 批处理在 %* 透传参数时，会把含换行的
+    参数截断到第一个换行——实测多行任务模板到达 reasonix 时只剩第一行，导致代理
+    拿不到文末的草稿路径而阻塞。直接 node 调用经 CreateProcessW 传参，多行中文
+    任务完整无损（实测校验通过）。
   - 输出统一按 UTF-8 解码（避免系统 gbk 解码中文报错）。
 """
 
@@ -92,11 +95,22 @@ def ensure_git_identity():
 
 
 def find_reasonix():
-    """定位 reasonix 可执行入口。Windows 使用 .cmd shim。"""
-    path = shutil.which("reasonix.cmd") or shutil.which("reasonix")
-    if not path:
+    """定位 reasonix 的 node 入口 [node.exe, reasonix.js]。
+
+    不用 cmd 的 .cmd shim（其 %* 会把含换行的任务截断到第一个换行），而是从 shim
+    同目录解析出 node.exe 与 reasonix.js 直接调用，保证多行任务完整传递。
+    """
+    shim = shutil.which("reasonix.cmd") or shutil.which("reasonix")
+    if not shim:
         sys.exit("错误: 未在 PATH 中找到 reasonix，请确认已安装并加入 PATH。")
-    return path
+    base = os.path.dirname(shim)
+    node = os.path.join(base, "node.exe")
+    if not os.path.isfile(node):
+        node = shutil.which("node")
+    js = os.path.join(base, "node_modules", "reasonix", "bin", "reasonix.js")
+    if not node or not os.path.isfile(js):
+        sys.exit(f"错误: 无法定位 node.exe 或 reasonix.js（base: {base}）。")
+    return [node, js]
 
 
 def build_task(rel_path):
@@ -130,16 +144,16 @@ def normalize_rel(raw):
 def run_reasonix(task, root, rel, metrics_path):
     """以 reasonix run 执行一次性任务；低 token 参数，并输出 --metrics 供反馈。"""
     rx = find_reasonix()
-    # 固定命令参数 + task 作为最后一个参数（argv 传递，不经 shell 拼接中文/换行）
-    cmd = [rx, "run",
-           "--permission-mode", "auto",
-           "--output-format", "text",
-           "--metrics", metrics_path,
-           "--dir", root,
-           task]
-    use_shell = os.name == "nt" and rx.lower().endswith(".cmd")
+    # 固定命令参数 + task 作为最后一个参数。直接 node 调用（shell=False），
+    # 不经 cmd shim，确保多行中文任务完整传递。
+    cmd = rx + ["run",
+                "--permission-mode", "auto",
+                "--output-format", "text",
+                "--metrics", metrics_path,
+                "--dir", root,
+                task]
     print(f"==> 将调用 reasonix 优化并写入：{rel}")
-    return subprocess.run(cmd, shell=use_shell, encoding="utf-8", errors="replace")
+    return subprocess.run(cmd, shell=False, encoding="utf-8", errors="replace")
 
 
 def parse_metrics(path):

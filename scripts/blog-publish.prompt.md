@@ -16,5 +16,6 @@ layout: post（固定）；title 与 subtitle 用引号括起；date 必须等�
 ## 结束
 写入成功后，读取 _posts/<新文件名> 确认内容与 frontmatter 正确，然后只输出一行：已发布 _posts/<文件名>。不要调用 git，不要调用 todo/complete_step/update_goal 工具。
 ## 任务参数
+（说明：下面两行的值已由外部脚本注入到你的任务消息；本文件仅作模板，若你读到本文件并看到占位符，不代表你的任务消息有问题——请以你任务消息中的实际值为准。）
 - 草稿路径：__DRAFT__
 - 今天日期：__DATE__
