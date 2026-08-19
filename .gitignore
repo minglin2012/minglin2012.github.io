@@ -18,3 +18,13 @@ _drafts/
 
 # Daily raw reports
 _inbox/
+
+# Python / reasonix tooling
+.venv/
+.reasonix/
+__pycache__/
+*.pyc
+us.stackdump
+
+# 纳入仓库的发布脚本（scripts/ 其余 .sh 仍按 *.sh 忽略）
+!scripts/blog-publish.sh
