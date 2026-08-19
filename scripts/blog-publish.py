@@ -4,18 +4,24 @@
 博客发布一次性脚本（基于 reasonix run）。
 
 用法:
-    python blog-publish.py <草稿路径> [--force]
+    python blog-publish.py <草稿路径> [--force] [--dry-run | --dry-run-agent]
 
     <草稿路径>  可传完整 _drafts/xxx 或仅文件名/子路径；文件必须存在。
     --force     跳过发布前的交互确认（用于脚本/定时场景）。
+    --dry-run      模拟运行（零 token）：只校验草稿/任务模板/占位符/reasonix/git 身份，
+                   不调用 reasonix、不写文件、不推 git。
+    --dry-run-agent 完整模拟（消耗 token）：在临时副本中跑完整流程（reasonix + 写
+                   _posts/ + git push 到本地 origin），不触碰真实仓库与远端。
+                   是否省 token：纯 wrapper 校验（--dry-run）不费 token；但只要涉及
+                   reasonix 内容生成就必然消耗 token，--dry-run-agent 与真实发布等价。
 
 职责划分（本脚本 vs reasonix 代理）:
   - reasonix 代理（scripts/blog-publish.prompt.md）：只做内容——读草稿、优化正文、
-    写 frontmatter、写入 _posts/、删除草稿。不做 git。
+    写 frontmatter、写入 _posts/。不做 git，也不删除草稿（均由本脚本确定性处理）。
     git 移出代理后，reasonix 对 git push 的 todo/最终答案验证护栏不再触发
     （实测：代理内执行 git push 会导致 final-answer 被拒、任务报失败）。
-  - 本脚本：确定性收尾——修复 frontmatter 的 YAML 引号问题（避免 Jekyll 构建失败）、
-    精确 git add/commit/push。无论 reasonix 退出码如何，只要新文章已写入，
+  - 本脚本：确定性收尾——删除草稿、修复 frontmatter 的 YAML 引号问题（避免 Jekyll
+    构建失败）、精确 git add/commit/push。无论 reasonix 退出码如何，只要新文章已写入，
     就保证落库并推送到远端。
 
 设计要点（对应需求）:
@@ -300,18 +306,95 @@ def publish_git(post_name, title):
     return git(["rev-parse", "--short", "HEAD"], check=False).stdout.strip()
 
 
+def dry_run_check(rel, src):
+    """--dry-run：零 token 的流程校验。不调用 reasonix，不修改任何文件。"""
+    print("== 模拟运行（--dry-run，零 token：不调用 reasonix、不改文件、不推 git）==")
+    if not os.path.isfile(src):
+        sys.exit(f"错误: 草稿不存在 -> {rel}")
+    print(f"[1] 草稿: {rel}（{os.path.getsize(src)} 字节）")
+    rx = find_reasonix()
+    print(f"[2] reasonix 入口: {os.path.basename(rx[0])} + {rx[1]}")
+    task = build_task(rel)
+    if PLACEHOLDER_DRAFT in task or PLACEHOLDER_DATE in task:
+        sys.exit("错误: 任务中仍残留占位符（build_task 异常）")
+    print(f"[3] 任务模板: 共 {len(task)} 字符 · 占位符已替换为实际值")
+    tail = task.rfind("## 任务参数")
+    print("    模板开头:", task.splitlines()[0][:60], "…")
+    print("    任务参数块:")
+    for ln in task[tail:].splitlines():
+        print("      " + ln)
+    before = snapshot_posts()
+    print(f"[4] _posts/ 现有文章: {len(before)} 篇")
+    name = git(["config", "user.name"], check=False).stdout.strip()
+    email = git(["config", "user.email"], check=False).stdout.strip()
+    print(f"[5] git 身份: {name or '(未设置，发布时自动补配)'} <{email or '?'}>")
+    remote = git(["remote", "get-url", "origin"], check=False).stdout.strip()
+    print(f"[6] git 远端: {remote or '(无)'}")
+    print("== 校验通过。去掉 --dry-run 执行真实发布 ==")
+    sys.exit(0)
+
+
+def dry_run_agent(rel):
+    """--dry-run-agent：完整模拟（消耗 token）。在临时副本里跑真实 reasonix + git
+    push 到本地 bare origin，真实仓库与远端零改动。"""
+    tmp_root = tempfile.mkdtemp(prefix="rx-sim-")
+    work = os.path.join(tmp_root, "work")
+    remote = os.path.join(tmp_root, "remote.git")
+    try:
+        ignore = shutil.ignore_patterns(
+            ".git", ".venv", ".reasonix", ".claude", "node_modules",
+            "_site", ".jekyll-cache", "__pycache__", "us.stackdump", "*.pyc")
+        shutil.copytree(ROOT, work, ignore=ignore)
+        if not os.path.isfile(os.path.join(work, rel)):
+            sys.exit(f"错误: 临时副本中找不到草稿 -> {rel}")
+        subprocess.run(["git", "init", "-b", "master", work], check=True, capture_output=True)
+        subprocess.run(["git", "init", "--bare", remote], check=True, capture_output=True)
+        subprocess.run(["git", "remote", "add", "origin", remote], cwd=work,
+                       check=True, capture_output=True)
+        print(f"== 模拟运行（--dry-run-agent）于临时副本: {work}")
+        print("== 会真实调用 reasonix（消耗 token），但只在副本内写文件并推送到本地 origin ==")
+        r = subprocess.run(
+            [sys.executable, os.path.join(work, "scripts", "blog-publish.py"),
+             rel, "--force"],
+            cwd=work, encoding="utf-8", errors="replace")
+        orig = snapshot_posts()
+        work_posts = {f for f in os.listdir(os.path.join(work, "_posts"))
+                      if f.endswith(".md")}
+        added = sorted(work_posts - orig)
+        loc = subprocess.run(["git", "rev-parse", "master"], cwd=work,
+                             capture_output=True, text=True).stdout.strip()
+        rem = subprocess.run(["git", "rev-parse", "master"], cwd=remote,
+                             capture_output=True, text=True).stdout.strip()
+        print("==")
+        print(f"模拟结果: 新增文章 {added if added else '(无)'} · 子进程退出码 {r.returncode}")
+        print(f"模拟推送: 本地 {loc[:8] or '(无)'} · 本地origin {rem[:8] or '(无)'} · 同步={bool(loc) and loc == rem}")
+        print("== 模拟结束：真实仓库与远端未被修改 ==")
+        return r.returncode or 0
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     force = "--force" in sys.argv[1:]
-    if len(args) != 1:
-        print("用法: python blog-publish.py <草稿路径> [--force]")
+    dry_run = "--dry-run" in sys.argv[1:]
+    dry_agent = "--dry-run-agent" in sys.argv[1:]
+    if len(args) != 1 or (dry_run and dry_agent):
+        print("用法: python blog-publish.py <草稿路径> [--force] [--dry-run | --dry-run-agent]")
         print("例:   python blog-publish.py _drafts/10")
+        print("      --dry-run       零 token 流程校验（不调用 reasonix、不改文件）")
+        print("      --dry-run-agent 临时副本完整模拟（消耗 token，不触碰真实仓库/远端）")
         sys.exit(2)
 
     rel = normalize_rel(args[0])
     src = os.path.join(ROOT, rel)
     if not os.path.isfile(src):
         sys.exit(f"错误: 草稿不存在 -> {rel}")
+
+    if dry_run:
+        dry_run_check(rel, src)
+    if dry_agent:
+        sys.exit(dry_run_agent(rel))
 
     if not force:
         try:
@@ -351,10 +434,10 @@ def main():
     post_path = ensure_date(post_path, today_str())
     post = os.path.basename(post_path)
 
-    # 模型第五步删除草稿；若未删，此处兜底补删（_drafts/ 已被 gitignore，不影响 git）
+    # 代理不删除草稿（模板已移除该步骤）；统一由本脚本删除（_drafts/ 已被 gitignore，不影响 git）
     if os.path.isfile(src):
         os.remove(src)
-        print(f"[提示] 已补删草稿: {rel}")
+        print(f"[提示] 已删除草稿: {rel}")
 
     title = read_title(post_path) or post
     sha = publish_git(post, title)

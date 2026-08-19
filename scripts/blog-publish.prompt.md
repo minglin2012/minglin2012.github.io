@@ -11,10 +11,8 @@ layout: post（固定）；title 与 subtitle 用引号括起；date 必须等�
 草稿原有 title/subtitle/tags 若合理则沿用；layout 与 header-img 强制按上面值。title 与 subtitle 若含半角双引号，YAML 字符串一律改用单引号括起（内层双引号原样保留）。
 ## 四、写入 _posts/
 文件名格式 YYYY-MM-DD-<slug>.md，其中 YYYY-MM-DD 必须等于文末「任务参数」中的今天日期（与 frontmatter 的 date 一致）；slug 由 title 推导，简短英文小写连字符形式，不超过 4 个英文词，保留有意义的专有名词（如 npx-skills、deepseek-api）。
-## 五、删除草稿
-仅当第四步写入成功才删除原草稿；失败则不删除。
 ## 结束
-写入成功后，读取 _posts/<新文件名> 确认内容与 frontmatter 正确，然后只输出一行：已发布 _posts/<文件名>。不要调用 git，不要调用 todo/complete_step/update_goal 工具。
+写入成功后，读取 _posts/<新文件名> 确认内容与 frontmatter 正确，然后只输出一行：已发布 _posts/<文件名>。不要删除草稿（由外部脚本统一负责），不要调用 git，不要调用 todo/complete_step/update_goal 工具。
 ## 任务参数
 （说明：下面两行的值已由外部脚本注入到你的任务消息；本文件仅作模板，若你读到本文件并看到占位符，不代表你的任务消息有问题——请以你任务消息中的实际值为准。）
 - 草稿路径：__DRAFT__
