@@ -26,5 +26,9 @@ __pycache__/
 *.pyc
 us.stackdump
 
+# Local secrets（首跑时从 reasonix 全局 .env 自动迁移 DEEPSEEK_API_KEY）
+.env
+
 # 纳入仓库的发布脚本（scripts/ 其余 .sh 仍按 *.sh 忽略）
 !scripts/blog-publish.sh
+!scripts/blog-publish-smol.sh
