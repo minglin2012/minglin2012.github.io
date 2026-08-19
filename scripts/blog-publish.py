@@ -58,6 +58,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 
@@ -147,8 +148,46 @@ def normalize_rel(raw):
     return rel
 
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# write_file 的参数含大段 content（多行/被截断），不能用完整 JSON 匹配；只匹配前缀取工具名
+TOOL_CALL_RE = re.compile(r"^\s*->\s+(\w+)\b")
+USAGE_RE = re.compile(r"·\s*(\d+)\s*tok\s*·")
+
+
+def strip_ansi(line):
+    return ANSI_RE.sub("", line)
+
+
+def extract_json_str(line, key):
+    """在工具调用行的参数里提取某 JSON 字段的字符串值（容忍截断与转义引号）。"""
+    i = line.find(key)
+    if i == -1:
+        return ""
+    m = re.match(r'\s*:\s*"((?:[^"\\]|\\.)*)"', line[i + len(key):])
+    return m.group(1) if m else ""
+
+
+def pick_tool_target(name, line):
+    """从工具调用行里挑一个简短目标用于展示（path/command 通常在首行参数）。"""
+    if name in ("read_file", "write_file"):
+        path = extract_json_str(line, '"path"')
+        if path:
+            return os.path.basename(path)
+    if name == "bash":
+        cmd = extract_json_str(line, '"command"')
+        if cmd:
+            cmd = re.sub(r"\\(.)", r"\1", cmd).strip()
+            return cmd[:50] + ("…" if len(cmd) > 50 else "")
+    rest = line[line.find("{") + 1:].strip()
+    return rest[:40] + ("…" if len(rest) > 40 else "")
+
+
 def run_reasonix(task, root, rel, metrics_path):
-    """以 reasonix run 执行一次性任务；低 token 参数，并输出 --metrics 供反馈。"""
+    """以 reasonix run 执行一次性任务；接管其 stdout，编号展示每次工具调用。
+
+    返回 (proc, steps, model_calls, final_answer)：steps 为 [(工具名, 目标), ...]
+    列表，model_calls 为模型调用次数（由 reasonix 输出的 tok 行统计）。
+    """
     rx = find_reasonix()
     # 固定命令参数 + task 作为最后一个参数。直接 node 调用（shell=False），
     # 不经 cmd shim，确保多行中文任务完整传递。
@@ -158,8 +197,65 @@ def run_reasonix(task, root, rel, metrics_path):
                 "--metrics", metrics_path,
                 "--dir", root,
                 task]
-    print(f"==> 将调用 reasonix 优化并写入：{rel}")
-    return subprocess.run(cmd, shell=False, encoding="utf-8", errors="replace")
+    print(f"[2/4] 调用 reasonix 优化内容: {rel}（git/删稿由本脚本完成）")
+    proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", errors="replace")
+
+    err_lines = []
+    t = threading.Thread(target=lambda: [err_lines.append(l.rstrip("\r\n"))
+                                         for l in proc.stderr], daemon=True)
+    t.start()
+
+    steps = []
+    model_calls = 0
+    final_answer = ""
+    for raw in proc.stdout:
+        line = strip_ansi(raw).rstrip("\r\n")
+        if not line.strip():
+            continue
+        m = TOOL_CALL_RE.match(line)
+        if m:
+            name = m.group(1)
+            target = pick_tool_target(name, line)
+            steps.append((name, target))
+            print(f"   · {len(steps)}) {name} {target}", flush=True)
+            continue
+        if USAGE_RE.search(line):  # reasonix 每轮调用的 tok 统计行，不展示
+            model_calls += 1
+            continue
+        if "▎ thinking" in line:   # 思考折叠标记，不展示
+            continue
+        if "⊘" in line or "blocked" in line.lower():  # 被拦截/失败的调用
+            print(f"   ! {line.strip()}", flush=True)
+            continue
+        if line.startswith("已发布 _posts/"):
+            final_answer = line.strip()
+            print(f"   · {line.strip()}", flush=True)
+            continue
+        if "错误" in line or "失败" in line:
+            print(f"   ! {line.strip()}", flush=True)
+            continue
+        # 其余（中间叙述/计划等）不展示，保持输出整洁
+    proc.wait()
+    t.join(timeout=5)
+    for el in err_lines:
+        print(f"   ! [stderr] {el}")
+    return proc, steps, model_calls, final_answer
+
+
+def print_reasonix_summary(steps, model_calls, final_answer):
+    """打印 reasonix 执行摘要：工具调用次数与序列。"""
+    line = "── reasonix 执行摘要 "
+    line += "─" * max(2, 42 - len(line))
+    print(line)
+    if steps:
+        seq = " → ".join(f"({i}){steps[i - 1][0]}" for i in range(1, len(steps) + 1))
+        print(f"工具调用 {len(steps)} 次: {seq}")
+    if model_calls:
+        print(f"模型调用 {model_calls} 次")
+    if final_answer:
+        print(f"最终: {final_answer.strip()}")
+    print("─" * 46)
 
 
 def parse_metrics(path):
@@ -197,8 +293,8 @@ def print_metrics(s):
     """打印一行 token/缓存命中率/耗时/成本摘要。"""
     total_in = s["hit"] + s["miss"]
     hit_rate = f"{s['hit'] / total_in * 100:.1f}%" if total_in else "n/a"
-    line = (f"[token] 输入 {s['prompt']}（缓存命中 {s['hit']} / 新 {s['miss']}，"
-            f"命中率 {hit_rate}）· 输出 {s['completion']}"
+    line = (f"   · 输入 {s['prompt']:,}（缓存命中 {s['hit']:,} / 新 {s['miss']:,}，"
+            f"命中率 {hit_rate}）· 输出 {s['completion']:,}"
             f" · 耗时 {s['duration_ms'] / 1000:.1f}s")
     if s["cny"] is not None:
         line += f" · 成本 ¥{float(s['cny']):.4f}"
@@ -403,48 +499,58 @@ def main():
             print("\n已取消。")
             sys.exit(130)
 
+    # ---- 步骤 1/4：前置校验与构建任务 ----
+    print("[1/4] 校验草稿与构建任务")
+    print(f"   · 草稿: {rel}（{os.path.getsize(src)} 字节）")
     ensure_git_identity()
     before = snapshot_posts()
+    print(f"   · _posts/ 现有文章: {len(before)} 篇")
     task = build_task(rel)
-    metrics_path = os.path.join(tempfile.gettempdir(), f"rx-metrics-{int(time.time())}.json")
-    result = run_reasonix(task, ROOT, rel, metrics_path)
 
-    # ---- token/命中率/成本反馈 ----
+    # ---- 步骤 2/4：调用 reasonix ----
+    metrics_path = os.path.join(tempfile.gettempdir(), f"rx-metrics-{int(time.time())}.json")
+    proc, steps, model_calls, final_answer = run_reasonix(task, ROOT, rel, metrics_path)
+
+    # ---- reasonix 执行摘要 + token 反馈 ----
     summ = parse_metrics(metrics_path)
     if summ:
+        print_reasonix_summary(steps, model_calls, final_answer or None)
         print_metrics(summ)
     else:
-        print("[token] 未获取到 reasonix metrics（运行可能被中断）")
+        print_reasonix_summary(steps, model_calls, final_answer or None)
+        print("   · 未获取到 reasonix metrics（运行可能被中断）")
     try:
         os.remove(metrics_path)
     except OSError:
         pass
 
-    # ---- 确定性收尾：不依赖 reasonix 退出码，只看实际产物 ----
+    # ---- 步骤 3/4：确定性收尾（不依赖 reasonix 退出码，只看实际产物） ----
     new = find_new_posts(before)
     if len(new) != 1:
         print(f"错误: 未能唯一识别新文章（新增 {len(new)} 个: {new}）")
-        sys.exit(result.returncode or 1)
-
+        sys.exit(proc.returncode or 1)
     post = new[0]
     post_path = os.path.join(POSTS_DIR, post)
-
+    print("[3/4] 确定性收尾（frontmatter / 日期 / 删稿）")
     if fix_frontmatter(post_path):
-        print(f"[修复] frontmatter 中 title/subtitle 含未转义双引号，已改写为合法 YAML: {post}")
+        print(f"   · [修复] frontmatter title/subtitle 含未转义双引号，已改写为合法 YAML: {post}")
     post_path = ensure_date(post_path, today_str())
     post = os.path.basename(post_path)
 
     # 代理不删除草稿（模板已移除该步骤）；统一由本脚本删除（_drafts/ 已被 gitignore，不影响 git）
     if os.path.isfile(src):
         os.remove(src)
-        print(f"[提示] 已删除草稿: {rel}")
+        print(f"   · 已删除草稿: {rel}")
 
+    # ---- 步骤 4/4：git 提交并推送 ----
+    print("[4/4] git 提交并推送")
     title = read_title(post_path) or post
     sha = publish_git(post, title)
 
-    print(f"已发布 _posts/{post} · {sha}")
-    if result.returncode != 0:
-        print(f"注意: reasonix 退出码 {result.returncode}（内容已写入并完成 git 发布，可忽略）")
+    print()
+    print(f"✓ 已发布 _posts/{post} · {sha}")
+    if proc.returncode != 0:
+        print(f"注意: reasonix 退出码 {proc.returncode}（内容已写入并完成 git 发布，可忽略）")
     sys.exit(0)
 
 
